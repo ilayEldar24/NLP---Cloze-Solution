@@ -14,7 +14,17 @@ def solve_cloze(input, candidates, corpus):
 
     getCadnidatesAndOrder(candidates, candidates_set, rightOrder)
     getInputBigrams(input, input_bigrams)
+
+
+    
     bigram_counts, trigram_counts = getCounts(corpus, candidates_set, input_bigrams)
+    #These dicts already in the coutns.pkl file.    
+    #To use them and save time, use this code instead:
+
+    # with open("counts.pkl", "rb") as f:
+        # bigram_counts, trigram_counts = pickle.load(f)        
+
+    
     solve(input, candidates_set, bigram_counts, trigram_counts, res)
     rightPredictions, totalPredictions = getResults(res, rightOrder)
 
