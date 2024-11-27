@@ -1,0 +1,5 @@
+{
+  "input_filename":  "data/document.cloze.txt",
+  "candidates_filename": "data/candidate.words.txt",
+  "corpus": "data/en.wikipedia2018.10M.txt"
+}
