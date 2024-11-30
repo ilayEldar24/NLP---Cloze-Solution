@@ -121,13 +121,13 @@ def extract_input_bigrams(filename, bigrams_set):
                 words = line.split()
 
                 # Iterate through word pairs to generate bigrams.
-                for i in range(1, len(words)):
+                for i in range(2, len(words)):
                     # Skip bigrams containing placeholders ("__________").
-                    if words[i] != "__________" and words[i - 1] != "__________":
+                    if words[i] == "__________":
                         # Clean words: Remove non-alphabetic characters and convert to lowercase.
                         bigram = (
-                            re.sub(r'[^a-zA-Z]', '', words[i - 1]).lower(),
-                            re.sub(r'[^a-zA-Z]', '', words[i]).lower()
+                            re.sub(r'[^a-zA-Z]', '', words[i - 2]).lower(),
+                            re.sub(r'[^a-zA-Z]', '', words[i - 1]).lower()
                         )
                         # Add the bigram to the set for uniqueness.
                         bigrams_set.add(bigram)
