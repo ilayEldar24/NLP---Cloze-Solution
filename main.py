@@ -4,7 +4,8 @@ import re
 import random
 import pickle
 
-def solve_text_completion(input_filename, candidate_filename, corpus_filename):
+
+def solve_cloze(input_filename, candidate_filename, corpus_filename):
     """
     Solves a text completion problem by predicting missing words in the input text
     based on candidates and a given corpus.
@@ -22,20 +23,23 @@ def solve_text_completion(input_filename, candidate_filename, corpus_filename):
     results = []
     correct_order = []
 
+    # Load the candidates, into a candidate_set, and a list (to have the original order of it).
     load_candidates(candidate_filename, candidate_set, correct_order)
+
+    # Extract all the pairs of words in the input file.
     extract_input_bigrams(input_filename, input_bigrams)
 
+    # Calculate the relevant bigram coutns and trigram coutns.
     bigram_counts, trigram_counts = calculate_ngram_counts(corpus_filename, candidate_set, input_bigrams)
-    # These dicts already in the coutns.pkl file.    
-    # To use them and save time, use this code instead:
 
-    # with open("counts.pkl", "rb") as f:
-    # bigram_counts, trigram_counts = pickle.load(f) 
-    
+    # Solve the cloze using the counts and the trigram formula.
     predict_words(input_filename, candidate_set, bigram_counts, trigram_counts, results)
+
+    # Compare the results to the original order.
     correct_predictions, total_predictions = evaluate_predictions(results, correct_order)
 
     print(f"Correct Predictions: {correct_predictions}, Total Predictions: {total_predictions}")
+
 
 def load_candidates(filename, candidates_set, order_list):
     """
@@ -54,6 +58,7 @@ def load_candidates(filename, candidates_set, order_list):
             for word in line.split():
                 candidates_set.add(word)
                 order_list.append(word)
+
 
 def extract_input_bigrams(filename, bigrams_set):
     """
@@ -74,6 +79,22 @@ def extract_input_bigrams(filename, bigrams_set):
                     bigram = (re.sub(r'[^a-zA-Z]', '', words[i - 1]).lower(),
                               re.sub(r'[^a-zA-Z]', '', words[i]).lower())
                     bigrams_set.add(bigram)
+
+
+def evaluate_predictions(predicted, true):
+    """
+    Evaluate the accuracy of predictions against the true order of words.
+
+    Parameters:
+        predicted (list): A list of predicted words.
+        true (list): A list of the true order of words.
+
+    Returns:
+        tuple: A tuple containing the number of correct predictions and the total number of predictions.
+    """
+    correct_count = sum(1 for i, pred in enumerate(predicted) if pred == true[i])
+    return correct_count, len(true)
+
 
 def calculate_ngram_counts(filename, candidates, input_bigrams):
     """
@@ -97,13 +118,11 @@ def calculate_ngram_counts(filename, candidates, input_bigrams):
         for i, line in enumerate(file):
             for w3 in line.split():
                 w3 = re.sub(r'[^a-zA-Z]', '', w3).lower()
-                if w3 in candidates:
-                    trigram_counts[(w1, w2, w3)] += 1
-                if w2 in candidates:
+                if w3 in candidates or w2 in candidates or w1 in candidates:
                     trigram_counts[(w1, w2, w3)] += 1
 
                 if w2:
-                    if (w2, w3) in input_bigrams or w3 in candidates:
+                    if (w2, w3) in input_bigrams or w3 in candidates or w2 in candidates:
                         bigram_counts[(w2, w3)] += 1
 
                 w1 = w2
@@ -112,10 +131,11 @@ def calculate_ngram_counts(filename, candidates, input_bigrams):
             if (i + 1) % 100000 == 0:
                 print(f'{(i + 1) / 100000}% Done.')
 
-    with open("counts.pkl", "wb") as f:
+    with open("counts2.pkl", "wb") as f:
         pickle.dump((bigram_counts, trigram_counts), f)
 
     return bigram_counts, trigram_counts
+
 
 def predict_words(filename, candidates_set, bigram_counts, trigram_counts, results):
     """
@@ -131,48 +151,37 @@ def predict_words(filename, candidates_set, bigram_counts, trigram_counts, resul
     Returns:
         None
     """
-    with open(filename, 'r', encoding='utf-8') as file:
-        for line in file:
+    k = 0.001
+    vocab_size = 50000
+    kv = k * vocab_size
+
+    with open(filename, 'r', encoding='utf-8') as inputFile:
+        for line in inputFile:
             words = line.split()
             for i, word in enumerate(words):
                 if word == "__________":
-                    max_value = -1
-                    top_candidate = None
-                    for candidate in list(candidates_set):
-                        if i < 2 or i + 1 >= len(words):
+                    maxScore = float('-inf')
+                    top = None
+                    for c in list(candidates_set):  # Use a copy of candidates_set
+                        if i < 2 or i + 2 >= len(words):  # Check index validity
                             continue
 
-                        w1, w2, w3 = words[i - 2], words[i - 1], words[i + 1]
-                        denominator = bigram_counts.get((w1, w2), 0) * bigram_counts.get((w2, candidate), 0)
+                        # Extract context words
+                        w1, w2, w3, w4 = words[i - 2], words[i - 1], words[i + 1], words[i + 2]
 
-                        if denominator == 0:
-                            continue
+                        factor1 = (trigram_counts.get((w1, w2, c), 0) + k) / (bigram_counts.get((w1, w2), 0) + kv)
+                        factor2 = (trigram_counts.get((w2, c, w3), 0) + k) / (bigram_counts.get((w2, c), 0) + kv)
+                        factor3 = (trigram_counts.get((c, w3, w4), 0) + k) / (bigram_counts.get((c, w3), 0) + kv)
 
-                        score = (trigram_counts.get((w1, w2, candidate), 0) * trigram_counts.get((w2, candidate, w3), 0)) / denominator
+                        curScore = factor1 * factor2 * factor3
 
-                        if score > max_value:
-                            max_value = score
-                            top_candidate = candidate
+                        if curScore > maxScore:
+                            maxScore = curScore
+                            top = c
 
-                    if top_candidate is None:
-                        top_candidate = random.choice(list(candidates_set))
+                    candidates_set.remove(top)
+                    results.append(top)
 
-                    candidates_set.remove(top_candidate)
-                    results.append(top_candidate)
-
-def evaluate_predictions(predicted, true):
-    """
-    Evaluate the accuracy of predictions against the true order of words.
-
-    Parameters:
-        predicted (list): A list of predicted words.
-        true (list): A list of the true order of words.
-
-    Returns:
-        tuple: A tuple containing the number of correct predictions and the total number of predictions.
-    """
-    correct_count = sum(1 for i, pred in enumerate(predicted) if pred == true[i])
-    return correct_count, len(true)
 
 def experiment(candidates_filename):
     """
@@ -193,15 +202,16 @@ def experiment(candidates_filename):
         random.shuffle(shuffled)
         unique_permutations.add(tuple(shuffled))
 
-    accuracy = sum(evaluate_predictions(perm, true_order)[0] / len(true_order) for perm in unique_permutations) / len(unique_permutations)
+    accuracy = sum(evaluate_predictions(perm, true_order)[0] / len(true_order) for perm in unique_permutations) / len(
+        unique_permutations)
 
     return accuracy * 100
+
 
 if __name__ == '__main__':
     with open('config.json', 'r', encoding='utf-8') as json_file:
         config = json.load(json_file)
 
-    experiment_results = experiment(config['candidates_filename'])
-    print(f'{experiment_results}% Accuracy with random choice.')
+    solve_cloze(config['input_filename'], config['candidates_filename'], config['corpus'])
 
-    solve_text_completion(config['input_filename'], config['candidates_filename'], config['corpus'])
+    experiment_results = experiment(config['candidates_filename'])
